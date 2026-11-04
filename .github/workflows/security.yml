@@ -19,10 +19,29 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: "fs"
-          scan-ref: "."
-          severity: "HIGH,CRITICAL"
-          format: "table"
-          exit-code: "0"
+        # Deliberate deviation from the fleet template for this repo only:
+        # aquasecurity/setup-trivy installs the Trivy binary from GitHub
+        # releases, and that download fails here (contrib/install.sh exits
+        # with curl code 6 after resolving the release tag, before the scan
+        # can run); established fleet repos pass only because their Actions
+        # caches already hold the binary, and this repo's cache is cold.
+        # Running the official Trivy container image pulls both the binary
+        # and its vulnerability DB from GHCR instead. The TRIVY_* settings
+        # below are exactly the environment the trivy-action sets for the
+        # fleet workflow (fs scan of ".", severity HIGH,CRITICAL, format
+        # table, exit-code 0, pkg types os,library), so the scan itself —
+        # target, severities, format and exit behavior — is unchanged.
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/scan" \
+            --volume "$GITHUB_WORKSPACE/.cache/trivy:/root/.cache/trivy" \
+            --workdir /scan \
+            --env TRIVY_SEVERITY="HIGH,CRITICAL" \
+            --env TRIVY_FORMAT="table" \
+            --env TRIVY_EXIT_CODE="0" \
+            --env TRIVY_IGNORE_UNFIXED="false" \
+            --env TRIVY_PKG_TYPES="os,library" \
+            --env TRIVY_LIST_ALL_PKGS="false" \
+            --env TRIVY_CACHE_DIR="/root/.cache/trivy" \
+            ghcr.io/aquasecurity/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e \
+            fs .
